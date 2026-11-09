@@ -2,7 +2,7 @@
 
 Patient management dashboard. React + TypeScript frontend, FastAPI backend, PostgreSQL.
 
-Features: patient CRUD with search, filters, sorting and pagination; clinical notes; generated patient summaries; login; dark mode.
+Features: patient CRUD with search, filters, sorting and pagination, clinical notes, generated patient summaries, login, dark mode.
 
 ## Run it
 
@@ -113,10 +113,3 @@ Setup, once:
 Optional variables per environment: `SEED_DEMO_DATA=true` (skip it for `release`), `SUMMARY_PROVIDER=llm`, `VERCEL_ALIAS` for a fixed address.
 
 `requirements.txt` is generated for Vercel: `cd backend && uv export --no-dev --no-hashes --frozen --no-emit-project -o ../requirements.txt`. CI fails if it falls behind `uv.lock`.
-
-## Not done
-
-- Roles, password reset, MFA, and an audit log
-- API types generated from the OpenAPI schema
-- Keyset pagination and end-to-end browser tests
-- Soft deletes and note history
