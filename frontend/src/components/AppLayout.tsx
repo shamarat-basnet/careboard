@@ -6,13 +6,13 @@ import {
   Burger,
   Center,
   Container,
-  Divider,
   Group,
   Loader,
   Menu,
   NavLink,
   Stack,
   Text,
+  TextInput,
   Tooltip,
   UnstyledButton,
   useComputedColorScheme,
@@ -23,12 +23,12 @@ import {
   IconLayoutDashboard,
   IconLogout,
   IconMoon,
-  IconSelector,
+  IconSearch,
   IconSun,
   IconUsers,
 } from '@tabler/icons-react';
-import { Suspense, type ComponentType } from 'react';
-import { Link, Outlet, useLocation } from 'react-router';
+import { Suspense, useState, type ComponentType, type FormEvent } from 'react';
+import { Link, Outlet, useLocation, useNavigate } from 'react-router';
 
 import { useLogout, useMe } from '@/features/auth/queries';
 import { usePatientStats } from '@/features/patients/queries';
@@ -59,28 +59,22 @@ function AccountMenu() {
   const logout = useLogout();
   if (!user) return null;
   return (
-    <Menu position="top-start" width={232} withArrow>
+    <Menu position="bottom-end" width={240} withArrow>
       <Menu.Target>
-        <UnstyledButton
-          aria-label="Account menu"
-          p={6}
-          style={{ borderRadius: 'var(--mantine-radius-md)', minWidth: 0, flex: 1 }}
-        >
-          <Group gap="sm" wrap="nowrap">
-            <Avatar name={user.name} color="initials" size="md" />
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <Text size="sm" fw={600} truncate>
-                {user.name}
-              </Text>
-              <Text size="xs" c="dimmed" truncate>
-                {user.email}
-              </Text>
-            </div>
-            <IconSelector size={16} opacity={0.5} />
-          </Group>
+        <UnstyledButton aria-label="Account menu" style={{ borderRadius: '50%' }}>
+          <Avatar name={user.name} color="initials" size="md" />
         </UnstyledButton>
       </Menu.Target>
       <Menu.Dropdown>
+        <Menu.Label>
+          <Text size="sm" fw={600} c="var(--mantine-color-text)" truncate>
+            {user.name}
+          </Text>
+          <Text size="xs" c="dimmed" truncate>
+            {user.email}
+          </Text>
+        </Menu.Label>
+        <Menu.Divider />
         <Menu.Item
           color="red"
           leftSection={<IconLogout size={16} />}
@@ -90,6 +84,28 @@ function AccountMenu() {
         </Menu.Item>
       </Menu.Dropdown>
     </Menu>
+  );
+}
+
+/** Jumps to the patient list with the query applied; the list page owns the actual search. */
+function HeaderSearch() {
+  const navigate = useNavigate();
+  const [value, setValue] = useState('');
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    const q = value.trim();
+    navigate(q ? `/patients?q=${encodeURIComponent(q)}` : '/patients');
+  };
+  return (
+    <form onSubmit={submit} role="search" style={{ flex: 1, maxWidth: 420 }}>
+      <TextInput
+        aria-label="Search patients"
+        placeholder="Search patients"
+        leftSection={<IconSearch size={16} />}
+        value={value}
+        onChange={(e) => setValue(e.currentTarget.value)}
+      />
+    </form>
   );
 }
 
@@ -105,7 +121,7 @@ const NAV: NavItem[] = [
   { to: '/patients', label: 'Patients', icon: IconUsers },
 ];
 
-/** The only navigation in the app: a sidebar on desktop, the same content in a drawer on small screens. */
+/** The only navigation links in the app: a sidebar on desktop, the same list in a drawer on small screens. */
 function Sidebar({ onNavigate }: { onNavigate: () => void }) {
   const { pathname } = useLocation();
   const { data: stats } = usePatientStats();
@@ -113,16 +129,6 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
 
   return (
     <>
-      <AppShell.Section visibleFrom="md" mb="lg" px={6} pt={4}>
-        <Link
-          to="/"
-          aria-label="CareBoard home"
-          style={{ color: 'inherit', textDecoration: 'none' }}
-        >
-          <Brand />
-        </Link>
-      </AppShell.Section>
-
       <AppShell.Section grow>
         <Stack gap={4}>
           {NAV.map((item) => {
@@ -157,14 +163,6 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
           })}
         </Stack>
       </AppShell.Section>
-
-      <AppShell.Section>
-        <Divider mb="sm" />
-        <Group gap={4} wrap="nowrap">
-          <AccountMenu />
-          <ThemeToggle />
-        </Group>
-      </AppShell.Section>
     </>
   );
 }
@@ -175,7 +173,7 @@ export function AppLayout() {
 
   return (
     <AppShell
-      header={{ height: { base: 56, md: 0 } }}
+      header={{ height: 60 }}
       navbar={{ width: 248, breakpoint: 'md', collapsed: { mobile: !opened } }}
       padding={0}
     >
@@ -183,18 +181,30 @@ export function AppLayout() {
         Skip to content
       </a>
 
-      {/* Small screens only: desktop has the sidebar and needs no top bar. */}
-      <AppShell.Header hiddenFrom="md">
+      <AppShell.Header>
         <Group h="100%" px="md" gap="sm" wrap="nowrap">
           <Burger
             opened={opened}
             onClick={toggle}
+            hiddenFrom="md"
             size="sm"
             aria-label={opened ? 'Close menu' : 'Open menu'}
           />
-          <Link to="/" onClick={close} style={{ color: 'inherit', textDecoration: 'none' }}>
+          <Link
+            to="/"
+            onClick={close}
+            aria-label="CareBoard home"
+            style={{ color: 'inherit', textDecoration: 'none' }}
+          >
             <Brand />
           </Link>
+          <Group gap="sm" wrap="nowrap" style={{ flex: 1 }} justify="flex-end">
+            <Group visibleFrom="sm" style={{ flex: 1 }} justify="center">
+              <HeaderSearch />
+            </Group>
+            <ThemeToggle />
+            <AccountMenu />
+          </Group>
         </Group>
       </AppShell.Header>
 

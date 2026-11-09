@@ -16,3 +16,19 @@ def test_vercel_entrypoint_serves_the_api_under_api_prefix() -> None:
     assert client.get("/api/health").json() == {"status": "ok"}
     assert client.get("/health").status_code == 404  # only reachable through /api
     assert client.get("/api/patients").status_code == 401  # login is still enforced
+
+
+def test_vercel_rewrite_query_param_is_dropped() -> None:
+    from fastapi import Request
+
+    spec = importlib.util.spec_from_file_location("vercel_entry2", ENTRY)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    @module.app.get("/probe")
+    async def probe(request: Request) -> dict[str, str]:
+        return dict(request.query_params)
+
+    got = TestClient(module.app).get("/probe?path=patients&page=2&q=a%20b").json()
+    assert got == {"page": "2", "q": "a b"}
