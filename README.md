@@ -95,6 +95,13 @@ frontend/src   api, features, components, app
 api/index.py   Vercel entrypoint
 ```
 
+## Choices
+
+- **Mantine** for components and theming (dark mode, accessible forms). **TanStack Query** for server state, so there is no global store to maintain. **React Router** for routes and unsaved-changes blocking. **react-hook-form + zod** for forms.
+- **FastAPI + SQLAlchemy + Alembic** on Postgres. Sync SQLAlchemy keeps the code simple, and FastAPI runs it in a thread pool.
+- **Server-side paging** instead of virtualization: a page of 20 to 100 rows renders fast at any table size.
+- **Postgres indexes over caching:** trigram indexes serve the search.
+
 ## Branches and deploys
 
 `develop` → `preview` → `release`, merged by pull request. Pull requests run the tests. A push to any of the three runs the tests, migrates that branch's database, and deploys to Vercel: `release` to production, the others to preview URLs.
