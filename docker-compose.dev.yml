@@ -1,0 +1,26 @@
+# Development override: source is bind-mounted and both servers hot reload.
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+#   -> frontend on http://localhost:5173, API on http://localhost:8000
+
+services:
+  backend:
+    environment:
+      RELOAD: "true"
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
+
+  frontend:
+    build:
+      target: dev
+    environment:
+      VITE_API_PROXY_TARGET: http://backend:8000
+      # File-change events don't always cross the Docker for Mac/Windows boundary.
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/index.html:/app/index.html
+    ports:
+      - "5173:5173"
+    healthcheck:
+      disable: true

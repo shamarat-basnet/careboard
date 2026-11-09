@@ -1,0 +1,28 @@
+import uuid
+from datetime import datetime
+from typing import TYPE_CHECKING
+
+from sqlalchemy import DateTime, ForeignKey, Index, Text, Uuid, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.models.base import Base
+
+if TYPE_CHECKING:
+    from app.models.patient import Patient
+
+
+class Note(Base):
+    __tablename__ = "notes"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    patient_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("patients.id", ondelete="CASCADE")
+    )
+    # Clinical time of the observation, supplied by the client; distinct from created_at.
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    content: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    patient: Mapped["Patient"] = relationship(back_populates="notes")
+
+    __table_args__ = (Index("ix_notes_patient_id_timestamp", "patient_id", "timestamp"),)

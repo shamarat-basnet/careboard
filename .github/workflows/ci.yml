@@ -1,0 +1,155 @@
+name: CI/CD
+
+# develop -> preview -> release. Every push runs the checks; once they pass, the push is
+# deployed to Vercel (see README, "Deploying"). `release` is production; the other two are
+# preview deployments. Pull requests only run the checks.
+on:
+  push:
+    branches: [develop, preview, release]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: healthcare_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/healthcare_test
+      TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/healthcare_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - name: requirements.txt (used by Vercel) matches uv.lock
+        run: diff <(tail -n +3 ../requirements.txt) <(uv export --no-dev --no-hashes --frozen --no-emit-project | tail -n +3)
+      - name: Migrations apply cleanly and match the models
+        run: |
+          uv run alembic upgrade head
+          uv run alembic check
+          uv run alembic downgrade base
+      - run: uv run pytest
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start the stack
+        run: docker compose up --build --wait --wait-timeout 180
+      - name: Smoke test through the frontend proxy
+        run: |
+          B=http://localhost:3000/api
+          curl -fsS $B/health
+          test "$(curl -s -o /dev/null -w '%{http_code}' $B/patients)" = 401   # login required
+          curl -fsS -c jar -X POST $B/auth/login -H 'Content-Type: application/json' \
+            -d '{"email":"admin@example.com","password":"ChangeMe-Demo-2026"}'
+          curl -fsS -b jar "$B/patients?page_size=1" | grep -q '"total"'
+      - if: always()
+        run: docker compose logs && docker compose down -v
+
+  deploy:
+    # Runs only for pushes to develop / preview / release, never for pull requests, and only
+    # once the repository variable DEPLOY_ENABLED is 'true' (set it after adding the secrets).
+    if: github.event_name == 'push' && vars.DEPLOY_ENABLED == 'true'
+    needs: [backend, frontend, docker]
+    runs-on: ubuntu-latest
+    # One deploy per branch at a time; a newer push waits instead of racing the migration.
+    concurrency:
+      group: deploy-${{ github.ref_name }}
+      cancel-in-progress: false
+    # A GitHub Environment named after the branch holds that stage's secrets, and can require
+    # a manual approval (recommended for `release`).
+    environment:
+      name: ${{ github.ref_name }}
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      TARGET: ${{ github.ref_name == 'release' && 'production' || 'preview' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+      - name: Migrate this stage's database and make sure the first user exists
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+          SEED_DEMO_DATA: ${{ vars.SEED_DEMO_DATA }}
+        run: |
+          uv sync --frozen --no-dev
+          uv run alembic upgrade head
+          uv run python -m app.seed.admin
+          if [ "$SEED_DEMO_DATA" = "true" ]; then uv run python -m app.seed; fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: npm install --global vercel@latest
+
+      - name: Build and deploy to Vercel (${{ env.TARGET }})
+        id: deploy
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SUMMARY_PROVIDER: ${{ vars.SUMMARY_PROVIDER || 'template' }}
+        run: |
+          FLAG=""; [ "$TARGET" = "production" ] && FLAG="--prod"
+          vercel pull --yes --environment="$TARGET" --token="$VERCEL_TOKEN"
+          vercel build $FLAG --token="$VERCEL_TOKEN"
+          URL=$(vercel deploy --prebuilt $FLAG --token="$VERCEL_TOKEN" \
+            --env DATABASE_URL="$DATABASE_URL" \
+            --env SERVERLESS=true \
+            --env COOKIE_SECURE=true \
+            --env SUMMARY_PROVIDER="$SUMMARY_PROVIDER" \
+            --env ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY")
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Give this stage a stable address (optional)
+        if: vars.VERCEL_ALIAS != ''
+        run: vercel alias set "${{ steps.deploy.outputs.url }}" "${{ vars.VERCEL_ALIAS }}" --token="$VERCEL_TOKEN"
+
+      - name: Summary
+        run: |
+          echo "### Deployed \`${{ github.ref_name }}\` ($TARGET)" >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ steps.deploy.outputs.url }}" >> "$GITHUB_STEP_SUMMARY"

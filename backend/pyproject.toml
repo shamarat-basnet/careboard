@@ -1,0 +1,41 @@
+[project]
+name = "healthcare-api"
+version = "1.0.0"
+description = "FastAPI backend for the healthcare patient dashboard"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.12",
+    "uvicorn[standard]>=0.34.0",
+    "sqlalchemy>=2.0.40",
+    "psycopg[binary]>=3.2.6",
+    "alembic>=1.15.2",
+    "pydantic>=2.11.0",
+    "pydantic-settings>=2.8.1",
+    "email-validator>=2.2.0",
+    "anthropic>=0.50.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5",
+    "httpx>=0.28.1",
+    "ruff>=0.11.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "N", "RUF"]
+ignore = ["B008"]  # FastAPI's Depends() in defaults is idiomatic
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff.lint.per-file-ignores]
+"app/seed/data.py" = ["E501"]  # long clinical note strings read better unwrapped
